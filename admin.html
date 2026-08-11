@@ -2,110 +2,86 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>本地编辑后台 | 河南紫宸</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="robots" content="noindex,nofollow">
+  <title>本地内容编辑器｜河南紫宸</title>
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/admin.css">
 </head>
 <body>
-  <section class="admin-login" data-admin-login>
-    <div class="admin-login-card">
-      <p class="admin-brand">河南紫宸</p>
-      <h1>本地可视化编辑后台</h1>
-      <p data-password-hint>请输入管理员密码进入本地编辑后台。</p>
-      <label class="admin-field">
-        <span>管理员密码</span>
-        <input type="password" data-admin-password placeholder="请输入密码">
-      </label>
-      <button class="admin-button admin-button-primary" data-login-button>进入后台</button>
-      <p class="admin-error" data-login-error></p>
-      <p class="admin-note">首次输入密码将直接设置为后台密码，后续可在同一浏览器中持续使用。</p>
+  <section class="login-view" data-login-view>
+    <div class="login-ambient" aria-hidden="true"></div>
+    <div class="login-card">
+      <a class="admin-brand" href="index.html"><span>ZC</span><div><strong>河南紫宸</strong><small>本地内容编辑器</small></div></a>
+      <p class="login-kicker">LOCAL CONTENT STUDIO</p>
+      <h1 data-login-title>设置本机编辑密码</h1>
+      <p class="login-intro" data-login-hint>密码仅保存在当前浏览器，用于保护本机编辑入口；它不是服务器后台账号。</p>
+      <form data-login-form>
+        <label><span>本机密码</span><input type="password" data-password-input autocomplete="current-password" minlength="6" placeholder="至少 6 位"></label>
+        <button type="submit">进入编辑器 <span>→</span></button>
+        <p class="login-error" role="alert" data-login-error></p>
+      </form>
+      <div class="login-note"><span>i</span><p>所有修改默认保存在当前浏览器。发布到网站仍需更新仓库文件。</p></div>
     </div>
   </section>
 
   <section class="admin-app" data-admin-app hidden>
     <aside class="admin-sidebar">
-      <div>
-        <p class="admin-brand">河南紫宸</p>
-        <p class="admin-help">你现在看到的是前端 1:1 预览，点击页面中的文字即可直接编辑。</p>
+      <div class="sidebar-top">
+        <a class="admin-brand admin-brand-light" href="index.html" target="_blank" rel="noopener"><span>ZC</span><div><strong>河南紫宸</strong><small>内容编辑器</small></div></a>
+        <button class="sidebar-close" type="button" data-sidebar-close aria-label="关闭侧栏">×</button>
       </div>
-
-      <div class="admin-page-nav">
-        <button class="admin-page-button is-active" data-page-target="home">首页</button>
-        <button class="admin-page-button" data-page-target="about">公司介绍</button>
-        <button class="admin-page-button" data-page-target="services">业务服务</button>
-        <button class="admin-page-button" data-page-target="cases">案例客户</button>
-        <button class="admin-page-button" data-page-target="contact">联系我们</button>
+      <nav class="admin-page-nav" aria-label="页面选择">
+        <p>页面</p>
+        <button class="is-active" type="button" data-page-target="home"><span>01</span>首页</button>
+        <button type="button" data-page-target="about"><span>02</span>公司介绍</button>
+        <button type="button" data-page-target="services"><span>03</span>业务服务</button>
+        <button type="button" data-page-target="cases"><span>04</span>场景参考</button>
+        <button type="button" data-page-target="contact"><span>05</span>联系我们</button>
+      </nav>
+      <div class="sidebar-actions">
+        <p>内容</p>
+        <button type="button" data-save-button><span>保存当前页</span><kbd>Ctrl S</kbd></button>
+        <button type="button" data-reset-page-button>恢复当前页默认</button>
+        <button type="button" data-reset-all-button>恢复全站默认</button>
+        <button type="button" data-export-button>导出配置</button>
+        <button type="button" data-import-button>导入配置</button>
+        <input type="file" accept="application/json" data-import-input hidden>
       </div>
-
-      <div class="admin-actions">
-        <button class="admin-action-button" data-save-button>保存当前页面</button>
-        <button class="admin-action-button" data-reset-page-button>恢复当前页默认</button>
-        <button class="admin-action-button" data-reset-all-button>恢复全站默认</button>
-        <button class="admin-action-button" data-export-button>导出配置</button>
-        <button class="admin-action-button" data-import-button>导入配置</button>
-        <button class="admin-action-button" data-logout-button>退出后台</button>
-        <input class="admin-file-input" type="file" accept="application/json" data-import-input>
-      </div>
+      <div class="sidebar-footer"><a href="index.html" target="_blank" rel="noopener">打开前台 ↗</a><button type="button" data-logout-button>退出编辑器</button></div>
     </aside>
 
-    <div class="admin-main">
+    <div class="admin-content">
       <header class="admin-topbar">
-        <div>
-          <strong>编辑模式</strong>
-          <p class="admin-note" data-editor-note>选择页面元素后即可直接修改文字。列表卡片可在右侧进行复制、删除和排序。</p>
-        </div>
-        <div class="admin-topbar-actions">
-          <button class="admin-chip" data-image-url-button>插入图片地址</button>
-          <button class="admin-chip" data-image-upload-button>上传图片</button>
-          <input class="admin-file-input" type="file" accept="image/*" data-image-upload-input>
-        </div>
+        <button class="sidebar-toggle" type="button" data-sidebar-toggle aria-label="打开侧栏">☰</button>
+        <div><div class="status-row"><span class="status-dot"></span><strong data-current-page-label>首页</strong><span class="dirty-badge" data-dirty-badge hidden>未保存</span></div><p data-editor-note>正在加载页面预览…</p></div>
+        <div class="topbar-actions"><button type="button" data-image-url-button>图片地址</button><button type="button" data-image-upload-button>上传图片</button><input type="file" accept="image/*" data-image-upload-input hidden></div>
       </header>
 
       <div class="admin-workspace">
-        <div class="admin-preview-shell">
-          <iframe class="admin-preview-frame" data-preview-frame title="前台预览"></iframe>
-        </div>
-
-        <aside class="admin-panel">
-          <div>
-            <h3>当前选中</h3>
-            <div class="admin-selected-label" data-selected-label>未选中元素</div>
-            <div class="admin-selected-type" data-selected-type>点击右侧预览中的文字、卡片或图片后开始编辑</div>
+        <section class="preview-panel">
+          <div class="preview-toolbar"><span></span><span></span><span></span><p data-preview-url>index.html</p></div>
+          <iframe data-preview-frame title="网站页面预览"></iframe>
+        </section>
+        <aside class="inspector">
+          <div class="inspector-section">
+            <p class="inspector-label">当前选择</p>
+            <div class="selection-summary"><strong data-selected-label>未选择元素</strong><span data-selected-type>点击预览中的文字或卡片</span></div>
           </div>
-
-          <div>
-            <h4>文字编辑</h4>
-            <label class="admin-field">
-              <span>当前内容</span>
-              <textarea class="admin-textarea" data-text-editor placeholder="选中标题、正文或按钮后，可在这里直接修改文字"></textarea>
-            </label>
+          <div class="inspector-section">
+            <label class="text-editor-label"><span>文字内容</span><textarea rows="8" data-text-editor placeholder="选择文字后可在此修改"></textarea></label>
           </div>
-
-          <div>
-            <h4>列表项操作</h4>
-            <div class="admin-list-actions">
-              <button class="admin-action-button" data-duplicate-button>复制当前卡片/项</button>
-              <button class="admin-action-button" data-delete-button>删除当前卡片/项</button>
-              <button class="admin-action-button" data-move-up-button>向上移动</button>
-              <button class="admin-action-button" data-move-down-button>向下移动</button>
-            </div>
+          <div class="inspector-section">
+            <p class="inspector-label">列表操作</p>
+            <div class="action-grid"><button type="button" data-duplicate-button disabled>复制</button><button type="button" data-delete-button disabled>删除</button><button type="button" data-move-up-button disabled>上移</button><button type="button" data-move-down-button disabled>下移</button></div>
           </div>
-
-          <div>
-            <h4>编辑说明</h4>
-            <p class="admin-help">1. 点击右侧页面中的标题或正文可直接修改。</p>
-            <p class="admin-help">2. 点击卡片后可在这里复制、删除和排序。</p>
-            <p class="admin-help">3. 图片可通过上传或填写地址插入到当前选中区域。</p>
-            <p class="admin-help">4. 修改完成后点击“保存当前页面”。</p>
-          </div>
+          <div class="inspector-tip"><strong>使用说明</strong><p>编辑文字或列表后点击“保存当前页”。上传图片会以本地数据形式保存，请控制文件大小。</p></div>
         </aside>
       </div>
     </div>
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
   </section>
-
   <script src="assets/js/admin.js"></script>
 </body>
 </html>

@@ -1,353 +1,420 @@
-const STORE_KEY = 'zichen-site-content-v1';
-const ADMIN_PASSWORD = 'hnzcAa334499';
-const PAGE_MAP = {
-  home: 'index.html',
-  about: 'about.html',
-  services: 'services.html',
-  cases: 'cases.html',
-  contact: 'contact.html',
-};
+(() => {
+  'use strict';
 
-const loginView = document.querySelector('[data-admin-login]');
-const appView = document.querySelector('[data-admin-app]');
-const passwordInput = document.querySelector('[data-admin-password]');
-const passwordHint = document.querySelector('[data-password-hint]');
-const loginButton = document.querySelector('[data-login-button]');
-const loginError = document.querySelector('[data-login-error]');
-const logoutButton = document.querySelector('[data-logout-button]');
-const pageButtons = document.querySelectorAll('[data-page-target]');
-const previewFrame = document.querySelector('[data-preview-frame]');
-const selectedLabel = document.querySelector('[data-selected-label]');
-const selectedType = document.querySelector('[data-selected-type]');
-const textEditor = document.querySelector('[data-text-editor]');
-const editorNote = document.querySelector('[data-editor-note]');
-const saveButton = document.querySelector('[data-save-button]');
-const resetPageButton = document.querySelector('[data-reset-page-button]');
-const resetAllButton = document.querySelector('[data-reset-all-button]');
-const exportButton = document.querySelector('[data-export-button]');
-const importButton = document.querySelector('[data-import-button]');
-const importInput = document.querySelector('[data-import-input]');
-const duplicateButton = document.querySelector('[data-duplicate-button]');
-const deleteButton = document.querySelector('[data-delete-button]');
-const moveUpButton = document.querySelector('[data-move-up-button]');
-const moveDownButton = document.querySelector('[data-move-down-button]');
-const imageUrlButton = document.querySelector('[data-image-url-button]');
-const imageUploadButton = document.querySelector('[data-image-upload-button]');
-const imageUploadInput = document.querySelector('[data-image-upload-input]');
+  const STORE_KEY = 'zichen-site-content-v2';
+  const PASSWORD_KEY = 'zichen-admin-password-v2';
+  const AUTH_KEY = 'zichen-site-admin-auth-v2';
+  const PAGE_MAP = {
+    home: { file: 'index.html', label: '首页' },
+    about: { file: 'about.html', label: '公司介绍' },
+    services: { file: 'services.html', label: '业务服务' },
+    cases: { file: 'cases.html', label: '场景参考' },
+    contact: { file: 'contact.html', label: '联系我们' },
+  };
+  const MAX_IMPORT_BYTES = 1024 * 1024;
+  const MAX_IMAGE_BYTES = 1.5 * 1024 * 1024;
+  const targetOrigin = window.location.origin === 'null' ? '*' : window.location.origin;
 
-let currentPage = 'home';
-let selected = null;
-let requestId = 0;
-const pendingRequests = new Map();
+  const $ = (selector) => document.querySelector(selector);
+  const $$ = (selector) => [...document.querySelectorAll(selector)];
 
-function loadStore() {
-  try {
-    return JSON.parse(localStorage.getItem(STORE_KEY) || '{"pages":{}}');
-  } catch {
-    return { pages: {} };
-  }
-}
+  const loginView = $('[data-login-view]');
+  const appView = $('[data-admin-app]');
+  const loginForm = $('[data-login-form]');
+  const loginTitle = $('[data-login-title]');
+  const loginHint = $('[data-login-hint]');
+  const passwordInput = $('[data-password-input]');
+  const loginError = $('[data-login-error]');
+  const previewFrame = $('[data-preview-frame]');
+  const editorNote = $('[data-editor-note]');
+  const currentPageLabel = $('[data-current-page-label]');
+  const previewUrl = $('[data-preview-url]');
+  const dirtyBadge = $('[data-dirty-badge]');
+  const selectedLabel = $('[data-selected-label]');
+  const selectedType = $('[data-selected-type]');
+  const textEditor = $('[data-text-editor]');
+  const repeatButtons = $$('[data-duplicate-button], [data-delete-button], [data-move-up-button], [data-move-down-button]');
 
-function saveStore(store) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(store));
-}
+  let currentPage = 'home';
+  let selected = null;
+  let dirty = false;
+  let requestSequence = 0;
+  let textTimer = 0;
+  const pending = new Map();
 
-function setPasswordHint() {
-  passwordHint.textContent = '请输入管理员密码进入本地编辑后台。';
-}
+  const digest = async (value) => {
+    if (globalThis.crypto?.subtle) {
+      const bytes = new TextEncoder().encode(value);
+      const hash = await crypto.subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
 
-function showApp() {
-  loginView.hidden = true;
-  appView.hidden = false;
-  loginView.style.display = 'none';
-  appView.style.display = 'grid';
-  loadPage(currentPage);
-}
+    // file:// and a few restricted browser contexts do not expose SubtleCrypto.
+    // Use a deterministic local fallback so the editor remains usable offline.
+    let first = 0x811c9dc5;
+    let second = 0x9e3779b9;
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      first = Math.imul(first ^ code, 0x01000193) >>> 0;
+      second = Math.imul(second ^ (code + index), 0x85ebca6b) >>> 0;
+    }
+    return `local-${first.toString(16).padStart(8, '0')}${second.toString(16).padStart(8, '0')}`;
+  };
 
-function postToPreview(message) {
-  if (!previewFrame.contentWindow) return;
-  previewFrame.contentWindow.postMessage(message, '*');
-}
+  const hasPassword = () => Boolean(localStorage.getItem(PASSWORD_KEY));
 
-function updateSelectedInfo() {
-  if (!selected) {
-    selectedLabel.textContent = '未选中元素';
-    selectedType.textContent = '点击右侧预览中的文字、卡片或图片后开始编辑';
-    textEditor.value = '';
-    textEditor.readOnly = false;
-    textEditor.placeholder = '选中标题、正文或按钮后，可在这里直接修改文字';
-    return;
-  }
-
-  selectedLabel.textContent = selected.tag;
-  selectedType.textContent = selected.repeat
-    ? '列表项'
-    : selected.image
-    ? '图片元素'
-    : '普通内容';
-
-  if (selected.image) {
-    textEditor.value = '';
-    textEditor.readOnly = true;
-    textEditor.placeholder = '当前选中为图片，请使用上方图片按钮进行替换或插入';
-    return;
-  }
-
-  if (!selected.editable) {
-    textEditor.value = '';
-    textEditor.readOnly = true;
-    textEditor.placeholder = '当前选中为列表容器，请点击其中具体文字后再编辑';
-    return;
-  }
-
-  textEditor.readOnly = false;
-  textEditor.value = selected.text || '';
-  textEditor.placeholder = '在此修改当前选中文字内容';
-}
-
-function sendRequest(type, payload = {}) {
-  return new Promise((resolve, reject) => {
-    const id = `req_${Date.now()}_${requestId++}`;
-    const timer = window.setTimeout(() => {
-      pendingRequests.delete(id);
-      reject(new Error('timeout'));
-    }, 2500);
-
-    pendingRequests.set(id, { resolve, reject, timer });
-    postToPreview({ source: 'admin', id, type, payload });
-  });
-}
-
-function loadPage(page) {
-  currentPage = page;
-  selected = null;
-  updateSelectedInfo();
-
-  pageButtons.forEach((button) => {
-    button.classList.toggle('is-active', button.dataset.pageTarget === page);
-  });
-
-  editorNote.textContent = '正在加载预览...';
-  previewFrame.src = `${PAGE_MAP[page]}#adminPreview`;
-}
-
-function requireRepeatSelection() {
-  if (!selected || !selected.repeat) {
-    editorNote.textContent = '请先点击一个列表卡片或列表项。';
-    return false;
-  }
-  return true;
-}
-
-function exportContent() {
-  const store = loadStore();
-  const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'zichen-site-content.json';
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function importContent(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      if (!parsed || typeof parsed !== 'object') throw new Error('invalid');
-      saveStore(parsed);
-      loadPage(currentPage);
-      editorNote.textContent = '已导入内容配置。';
-    } catch {
-      editorNote.textContent = '导入失败：文件格式不正确。';
+  const updateLoginCopy = () => {
+    if (hasPassword()) {
+      loginTitle.textContent = '进入本地编辑器';
+      loginHint.textContent = '输入当前浏览器中设置的本机密码。内容和密码均不会发送到服务器。';
+      passwordInput.autocomplete = 'current-password';
+    } else {
+      loginTitle.textContent = '设置本机编辑密码';
+      loginHint.textContent = '首次使用请设置至少 6 位密码。密码仅保存在当前浏览器，用于保护本机编辑入口。';
+      passwordInput.autocomplete = 'new-password';
     }
   };
-  reader.readAsText(file);
-}
 
-window.addEventListener('message', (event) => {
-  const data = event.data || {};
-  if (data.source !== 'site-editor') return;
+  const loadStore = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORE_KEY) || '{"version":2,"pages":{}}');
+      if (!parsed || typeof parsed !== 'object') throw new Error('invalid');
+      if (!parsed.pages || typeof parsed.pages !== 'object') parsed.pages = {};
+      return { version: 2, pages: parsed.pages };
+    } catch {
+      return { version: 2, pages: {} };
+    }
+  };
 
-  if (data.replyTo && pendingRequests.has(data.replyTo)) {
-    const pending = pendingRequests.get(data.replyTo);
-    window.clearTimeout(pending.timer);
-    pendingRequests.delete(data.replyTo);
-    pending.resolve(data.payload);
-    return;
-  }
+  const saveStore = (store) => {
+    localStorage.setItem(STORE_KEY, JSON.stringify(store));
+  };
 
-  if (data.type === 'ready') {
-    editorNote.textContent = '预览已加载。点击右侧页面中的文字即可直接编辑。';
-    return;
-  }
+  const setNote = (message) => {
+    editorNote.textContent = message;
+  };
 
-  if (data.type === 'selected') {
-    selected = data.payload;
-    updateSelectedInfo();
-    return;
-  }
+  const setDirty = (value) => {
+    dirty = Boolean(value);
+    dirtyBadge.hidden = !dirty;
+  };
 
-  if (data.type === 'info') {
-    editorNote.textContent = data.payload && data.payload.message
-      ? data.payload.message
-      : '操作已执行。';
-  }
-});
+  const showApp = () => {
+    loginView.hidden = true;
+    appView.hidden = false;
+    loadPage(currentPage);
+  };
 
-previewFrame.addEventListener('load', () => {
-  window.setTimeout(() => {
-    postToPreview({ source: 'admin', type: 'handshake' });
-  }, 120);
-});
+  const postToPreview = (message) => {
+    previewFrame?.contentWindow?.postMessage(message, targetOrigin);
+  };
 
-loginButton.addEventListener('click', () => {
-  const value = passwordInput.value.trim();
-  if (!value) {
-    loginError.textContent = '请输入管理员密码。';
-    return;
-  }
+  const validPreviewMessage = (event) => {
+    if (event.source !== previewFrame?.contentWindow) return false;
+    if (window.location.origin === 'null') return event.origin === 'null';
+    return event.origin === window.location.origin;
+  };
 
-  if (value === ADMIN_PASSWORD) {
-    sessionStorage.setItem('zichen-site-admin-auth', 'true');
-    passwordInput.value = '';
-    loginError.textContent = '';
-    showApp();
-    return;
-  }
+  const updateInspector = () => {
+    if (!selected) {
+      selectedLabel.textContent = '未选择元素';
+      selectedType.textContent = '点击预览中的文字或卡片';
+      textEditor.value = '';
+      textEditor.disabled = true;
+      repeatButtons.forEach((button) => { button.disabled = true; });
+      return;
+    }
 
-  loginError.textContent = '密码不正确，请重新输入。';
-});
+    const labels = { h1: '一级标题', h2: '标题', h3: '小标题', h4: '小标题', p: '段落', a: '链接文字', span: '短文本', strong: '强调文字', small: '辅助文字', li: '列表文字', summary: '问答标题', button: '按钮文字', img: '图片' };
+    selectedLabel.textContent = labels[selected.tag] || selected.tag || '页面元素';
+    selectedType.textContent = selected.image ? '图片元素' : selected.repeat ? '列表项内元素' : '普通内容';
+    textEditor.disabled = !selected.editable || selected.image;
+    textEditor.value = selected.editable && !selected.image ? selected.text || '' : '';
+    textEditor.placeholder = selected.image ? '请使用顶部按钮更换图片' : selected.editable ? '在此修改文字内容' : '请选择具体文字后编辑';
+    repeatButtons.forEach((button) => { button.disabled = !selected.repeat; });
+  };
 
-passwordInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    loginButton.click();
-  }
-});
-
-logoutButton.addEventListener('click', () => {
-  sessionStorage.removeItem('zichen-site-admin-auth');
-  location.reload();
-});
-
-pageButtons.forEach((button) => {
-  button.addEventListener('click', () => loadPage(button.dataset.pageTarget));
-});
-
-textEditor.addEventListener('input', () => {
-  if (!selected || !selected.editable || !selected.seid) return;
-  postToPreview({
-    source: 'admin',
-    type: 'set-text',
-    payload: { seid: selected.seid, text: textEditor.value },
+  const sendRequest = (type, payload = {}) => new Promise((resolve, reject) => {
+    const id = `request-${Date.now()}-${requestSequence++}`;
+    const timer = window.setTimeout(() => {
+      pending.delete(id);
+      reject(new Error('preview timeout'));
+    }, 4500);
+    pending.set(id, { resolve, reject, timer });
+    postToPreview({ source: 'admin', id, type, payload });
   });
-});
 
-saveButton.addEventListener('click', async () => {
-  try {
-    const htmlPayload = await sendRequest('get-html');
+  const loadPage = (page) => {
+    if (!PAGE_MAP[page]) return;
+    currentPage = page;
+    selected = null;
+    setDirty(false);
+    updateInspector();
+    $$('[data-page-target]').forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.pageTarget === page);
+    });
+    currentPageLabel.textContent = PAGE_MAP[page].label;
+    previewUrl.textContent = PAGE_MAP[page].file;
+    setNote('正在加载页面预览…');
+    previewFrame.src = `${PAGE_MAP[page].file}#adminPreview`;
+    appView.classList.remove('sidebar-open');
+  };
+
+  const sanitizeSection = (html, selector) => {
+    if (typeof html !== 'string' || html.length > 800_000) return '';
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const section = parsed.querySelector(selector);
+    if (!section) return '';
+    section.querySelectorAll('script, iframe, object, embed, link, meta, base').forEach((node) => node.remove());
+    section.querySelectorAll('*').forEach((node) => {
+      [...node.attributes].forEach((attribute) => {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value.trim().toLowerCase();
+        if (name.startsWith('on') || ((name === 'href' || name === 'src') && value.startsWith('javascript:'))) {
+          node.removeAttribute(attribute.name);
+        }
+      });
+    });
+    return section.outerHTML;
+  };
+
+  const normalizeImport = (value) => {
+    if (!value || typeof value !== 'object' || !value.pages || typeof value.pages !== 'object') throw new Error('invalid schema');
+    const clean = { version: 2, pages: {} };
+    Object.keys(PAGE_MAP).forEach((page) => {
+      const source = value.pages[page];
+      if (!source || typeof source !== 'object') return;
+      const mainHtml = sanitizeSection(source.mainHtml, 'main');
+      const footerHtml = sanitizeSection(source.footerHtml, 'footer');
+      if (mainHtml || footerHtml) clean.pages[page] = { mainHtml, footerHtml };
+    });
+    return clean;
+  };
+
+  const downloadJson = () => {
+    const blob = new Blob([JSON.stringify(loadStore(), null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `zichen-content-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setNote('配置文件已导出。');
+  };
+
+  const importJson = async (file) => {
+    if (!file || file.size > MAX_IMPORT_BYTES) {
+      setNote('导入失败：文件不存在或超过 1 MB。');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await file.text());
+      const clean = normalizeImport(parsed);
+      saveStore(clean);
+      loadPage(currentPage);
+      setNote('配置已安全导入。');
+    } catch {
+      setNote('导入失败：文件结构不正确。');
+    }
+  };
+
+  const validImageSource = (source) => {
+    const value = String(source || '').trim();
+    if (!value) return false;
+    if (/^data:image\//i.test(value)) return true;
+    if (/^https?:\/\//i.test(value)) return true;
+    return /^(\.\.?\/|assets\/|\/)[^\s]+$/i.test(value);
+  };
+
+  const sendImage = (source) => {
+    if (!selected?.seid) {
+      setNote('请先在预览中选择一个图片或卡片。');
+      return;
+    }
+    if (!validImageSource(source)) {
+      setNote('图片地址无效，仅支持 http(s)、data:image 或站内相对路径。');
+      return;
+    }
+    postToPreview({ source: 'admin', type: 'insert-image', payload: { seid: selected.seid, src: String(source).trim() } });
+  };
+
+  loginForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    loginError.textContent = '';
+    const password = passwordInput.value;
+    if (password.length < 6) {
+      loginError.textContent = '密码至少需要 6 位。';
+      return;
+    }
+
+    try {
+      const hash = await digest(password);
+      const existing = localStorage.getItem(PASSWORD_KEY);
+      if (!existing) {
+        localStorage.setItem(PASSWORD_KEY, hash);
+      } else if (hash !== existing) {
+        loginError.textContent = '密码不正确。';
+        return;
+      }
+      sessionStorage.setItem(AUTH_KEY, 'true');
+      passwordInput.value = '';
+      showApp();
+    } catch {
+      loginError.textContent = '当前浏览器无法完成本机密码校验。';
+    }
+  });
+
+  window.addEventListener('message', (event) => {
+    if (!validPreviewMessage(event)) return;
+    const data = event.data || {};
+    if (data.source !== 'site-editor') return;
+
+    if (data.replyTo && pending.has(data.replyTo)) {
+      const item = pending.get(data.replyTo);
+      clearTimeout(item.timer);
+      pending.delete(data.replyTo);
+      item.resolve(data.payload || {});
+      return;
+    }
+
+    if (data.type === 'ready') {
+      setNote('预览已就绪。点击页面中的文字、卡片或图片开始编辑。');
+      return;
+    }
+
+    if (data.type === 'selected') {
+      selected = data.payload || null;
+      updateInspector();
+      return;
+    }
+
+    if (data.type === 'info') {
+      if (data.payload?.message) setNote(data.payload.message);
+      if (data.payload?.dirty) setDirty(true);
+    }
+  });
+
+  previewFrame.addEventListener('load', () => {
+    window.setTimeout(() => postToPreview({ source: 'admin', type: 'handshake' }), 100);
+  });
+
+  $$('[data-page-target]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (dirty && !window.confirm('当前页面有未保存修改，确认切换页面吗？')) return;
+      loadPage(button.dataset.pageTarget);
+    });
+  });
+
+  textEditor.addEventListener('input', () => {
+    if (!selected?.editable || !selected.seid || selected.image) return;
+    setDirty(true);
+    clearTimeout(textTimer);
+    textTimer = window.setTimeout(() => {
+      postToPreview({ source: 'admin', type: 'set-text', payload: { seid: selected.seid, text: textEditor.value } });
+    }, 70);
+  });
+
+  $('[data-save-button]').addEventListener('click', async () => {
+    try {
+      const payload = await sendRequest('get-html');
+      if (!payload.mainHtml || !payload.footerHtml) throw new Error('empty payload');
+      const store = loadStore();
+      store.pages[currentPage] = { mainHtml: payload.mainHtml, footerHtml: payload.footerHtml };
+      saveStore(store);
+      setDirty(false);
+      setNote('当前页面已保存到本浏览器。');
+    } catch (error) {
+      const quota = error?.name === 'QuotaExceededError';
+      setNote(quota ? '保存失败：浏览器存储空间不足，请减少图片大小。' : '保存失败：无法读取当前预览。');
+    }
+  });
+
+  $('[data-reset-page-button]').addEventListener('click', () => {
+    if (!window.confirm(`确认恢复“${PAGE_MAP[currentPage].label}”的默认内容吗？`)) return;
     const store = loadStore();
-    if (!store.pages) store.pages = {};
-    store.pages[currentPage] = {
-      mainHtml: htmlPayload.mainHtml,
-      footerHtml: htmlPayload.footerHtml,
-    };
-    saveStore(store);
-    editorNote.textContent = '已保存到本地浏览器。刷新前台页面即可看到更新结果。';
-  } catch {
-    editorNote.textContent = '保存失败：未能从预览获取页面内容。';
-  }
-});
-
-resetPageButton.addEventListener('click', () => {
-  const store = loadStore();
-  if (store.pages && store.pages[currentPage]) {
     delete store.pages[currentPage];
     saveStore(store);
-  }
-  loadPage(currentPage);
-  editorNote.textContent = '当前页面已恢复默认内容。';
-});
-
-resetAllButton.addEventListener('click', () => {
-  localStorage.removeItem(STORE_KEY);
-  loadPage(currentPage);
-  editorNote.textContent = '所有页面内容已恢复默认。';
-});
-
-exportButton.addEventListener('click', exportContent);
-importButton.addEventListener('click', () => importInput.click());
-importInput.addEventListener('change', (event) => {
-  const [file] = event.target.files;
-  if (file) importContent(file);
-});
-
-duplicateButton.addEventListener('click', () => {
-  if (!requireRepeatSelection()) return;
-  postToPreview({
-    source: 'admin',
-    type: 'repeat-action',
-    payload: { seid: selected.seid, action: 'duplicate' },
+    loadPage(currentPage);
+    setNote('当前页面已恢复默认内容。');
   });
-});
 
-deleteButton.addEventListener('click', () => {
-  if (!requireRepeatSelection()) return;
-  postToPreview({
-    source: 'admin',
-    type: 'repeat-action',
-    payload: { seid: selected.seid, action: 'delete' },
+  $('[data-reset-all-button]').addEventListener('click', () => {
+    if (!window.confirm('确认清除全部页面的本地修改吗？此操作不可撤销。')) return;
+    localStorage.removeItem(STORE_KEY);
+    loadPage(currentPage);
+    setNote('全站本地修改已清除。');
   });
-});
 
-moveUpButton.addEventListener('click', () => {
-  if (!requireRepeatSelection()) return;
-  postToPreview({
-    source: 'admin',
-    type: 'repeat-action',
-    payload: { seid: selected.seid, action: 'up' },
+  $('[data-export-button]').addEventListener('click', downloadJson);
+  $('[data-import-button]').addEventListener('click', () => $('[data-import-input]').click());
+  $('[data-import-input]').addEventListener('change', (event) => {
+    const [file] = event.target.files;
+    importJson(file);
+    event.target.value = '';
   });
-});
 
-moveDownButton.addEventListener('click', () => {
-  if (!requireRepeatSelection()) return;
-  postToPreview({
-    source: 'admin',
-    type: 'repeat-action',
-    payload: { seid: selected.seid, action: 'down' },
+  const repeatAction = (action) => {
+    if (!selected?.repeat || !selected.seid) {
+      setNote('请先选择一个列表卡片或列表项。');
+      return;
+    }
+    postToPreview({ source: 'admin', type: 'repeat-action', payload: { seid: selected.seid, action } });
+  };
+
+  $('[data-duplicate-button]').addEventListener('click', () => repeatAction('duplicate'));
+  $('[data-delete-button]').addEventListener('click', () => repeatAction('delete'));
+  $('[data-move-up-button]').addEventListener('click', () => repeatAction('up'));
+  $('[data-move-down-button]').addEventListener('click', () => repeatAction('down'));
+
+  $('[data-image-url-button]').addEventListener('click', () => {
+    const source = window.prompt('请输入图片 URL 或站内相对路径');
+    if (source !== null) sendImage(source);
   });
-});
 
-function sendImageToSelection(src) {
-  if (!selected || !selected.seid) {
-    editorNote.textContent = '请先在预览中选中一个元素，再插入图片。';
-    return;
-  }
-  postToPreview({
-    source: 'admin',
-    type: 'insert-image',
-    payload: { seid: selected.seid, src },
+  $('[data-image-upload-button]').addEventListener('click', () => $('[data-image-upload-input]').click());
+  $('[data-image-upload-input]').addEventListener('change', (event) => {
+    const [file] = event.target.files;
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setNote('上传失败：请选择图片文件。');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setNote('上传失败：图片不能超过 1.5 MB。');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => sendImage(reader.result);
+    reader.onerror = () => setNote('图片读取失败。');
+    reader.readAsDataURL(file);
   });
-}
 
-imageUrlButton.addEventListener('click', () => {
-  const url = window.prompt('请输入图片路径或图片 URL');
-  if (url) sendImageToSelection(url.trim());
-});
+  $('[data-logout-button]').addEventListener('click', () => {
+    sessionStorage.removeItem(AUTH_KEY);
+    location.reload();
+  });
 
-imageUploadButton.addEventListener('click', () => imageUploadInput.click());
-imageUploadInput.addEventListener('change', (event) => {
-  const [file] = event.target.files;
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => sendImageToSelection(reader.result);
-  reader.readAsDataURL(file);
-});
+  $('[data-sidebar-toggle]').addEventListener('click', () => appView.classList.add('sidebar-open'));
+  $('[data-sidebar-close]').addEventListener('click', () => appView.classList.remove('sidebar-open'));
+  $('[data-sidebar-backdrop]').addEventListener('click', () => appView.classList.remove('sidebar-open'));
 
-setPasswordHint();
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && !appView.hidden) {
+      event.preventDefault();
+      $('[data-save-button]').click();
+    }
+  });
 
-if (sessionStorage.getItem('zichen-site-admin-auth') === 'true') {
-  showApp();
-}
+  window.addEventListener('beforeunload', (event) => {
+    if (!dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
+  updateLoginCopy();
+  updateInspector();
+  if (sessionStorage.getItem(AUTH_KEY) === 'true' && hasPassword()) showApp();
+})();
