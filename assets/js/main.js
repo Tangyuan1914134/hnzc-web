@@ -202,34 +202,26 @@
       if (!copied) throw new Error('copy failed');
     };
 
-    copyButton?.addEventListener('click', async () => {
+    const copySummary = async () => {
       const result = validate();
       if (!result.valid) {
         setStatus('请先补全必填信息。', 'error');
+        form.querySelector('.is-invalid')?.focus();
         return;
       }
       try {
         await copyText(buildSummary(result.data));
-        setStatus('需求摘要已复制到剪贴板。', 'success');
+        setStatus('需求摘要已生成并复制到剪贴板。请通过核验后的企业联系方式发送。', 'success');
       } catch {
         setStatus('复制失败，请手动选择并复制表单内容。', 'error');
       }
-    });
+    };
+
+    copyButton?.addEventListener('click', copySummary);
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      const result = validate();
-      if (!result.valid) {
-        setStatus('请检查必填信息后重试。', 'error');
-        form.querySelector('.is-invalid')?.focus();
-        return;
-      }
-
-      const summary = buildSummary(result.data);
-      const subject = encodeURIComponent(`融资咨询｜${String(result.data.get('name') || '').trim()}`);
-      const bodyText = encodeURIComponent(summary);
-      setStatus('正在调用你的邮件客户端；本站不会保存表单信息。', 'success');
-      window.location.href = `mailto:service@zichen-demo.cn?subject=${subject}&body=${bodyText}`;
+      copySummary();
     });
   }
 })();
