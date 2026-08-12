@@ -2,12 +2,16 @@
   'use strict';
 
   const body = document.body;
+  const root = document.documentElement;
   const header = document.querySelector('[data-header]');
   const navToggle = document.querySelector('[data-nav-toggle]');
   const navMenu = document.querySelector('[data-nav-menu]');
   const currentPage = body.dataset.page || '';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const inEditorFrame = window.top !== window.self;
+
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute('content', '#f2eee5');
 
   const closeNavigation = () => {
     if (!navToggle || !navMenu) return;
@@ -34,6 +38,12 @@
       if (event.key === 'Escape') closeNavigation();
     });
 
+    document.addEventListener('click', (event) => {
+      if (!body.classList.contains('nav-open')) return;
+      if (event.target.closest('[data-nav-menu], [data-nav-toggle]')) return;
+      closeNavigation();
+    });
+
     window.addEventListener('resize', () => {
       if (window.innerWidth > 860) closeNavigation();
     });
@@ -46,11 +56,23 @@
     }
   });
 
-  const updateHeader = () => {
-    if (header) header.classList.toggle('is-scrolled', window.scrollY > 10);
+  let scrollFrame = 0;
+  const updateScrollState = () => {
+    scrollFrame = 0;
+    const maxScroll = Math.max(1, root.scrollHeight - window.innerHeight);
+    const progress = Math.min(100, Math.max(0, (window.scrollY / maxScroll) * 100));
+    root.style.setProperty('--scroll-progress', `${progress}%`);
+    if (header) header.classList.toggle('is-scrolled', window.scrollY > 12);
   };
-  updateHeader();
-  window.addEventListener('scroll', updateHeader, { passive: true });
+
+  const requestScrollUpdate = () => {
+    if (scrollFrame) return;
+    scrollFrame = window.requestAnimationFrame(updateScrollState);
+  };
+
+  updateScrollState();
+  window.addEventListener('scroll', requestScrollUpdate, { passive: true });
+  window.addEventListener('resize', requestScrollUpdate, { passive: true });
 
   document.querySelectorAll('[data-current-year]').forEach((element) => {
     element.textContent = String(new Date().getFullYear());
@@ -60,7 +82,7 @@
   if (inEditorFrame || reducedMotion || !('IntersectionObserver' in window)) {
     revealElements.forEach((element) => element.classList.add('in-view'));
   } else {
-    document.documentElement.classList.add('reveal-ready');
+    root.classList.add('reveal-ready');
     const observer = new IntersectionObserver(
       (entries, currentObserver) => {
         entries.forEach((entry) => {
@@ -69,7 +91,7 @@
           currentObserver.unobserve(entry.target);
         });
       },
-      { threshold: 0.12, rootMargin: '0px 0px -7% 0px' }
+      { threshold: 0.1, rootMargin: '0px 0px -6% 0px' }
     );
     revealElements.forEach((element) => observer.observe(element));
   }
@@ -78,14 +100,22 @@
   if (parallax && !reducedMotion && window.matchMedia('(pointer: fine)').matches) {
     const onPointerMove = (event) => {
       const rect = parallax.getBoundingClientRect();
-      const x = (event.clientX - rect.left) / rect.width - 0.5;
-      const y = (event.clientY - rect.top) / rect.height - 0.5;
-      parallax.style.transform = `perspective(1200px) rotateY(${x * 3.2}deg) rotateX(${-y * 2.6}deg)`;
+      const x = ((event.clientX - rect.left) / rect.width - 0.5) * 14;
+      const y = ((event.clientY - rect.top) / rect.height - 0.5) * 14;
+      parallax.style.setProperty('--primary-x', `${x * 0.45}px`);
+      parallax.style.setProperty('--primary-y', `${y * 0.45}px`);
+      parallax.style.setProperty('--float-x', `${x * -0.7}px`);
+      parallax.style.setProperty('--float-y', `${y * -0.7}px`);
+    };
+    const resetPointer = () => {
+      parallax.style.setProperty('--primary-x', '0px');
+      parallax.style.setProperty('--primary-y', '0px');
+      parallax.style.setProperty('--float-x', '0px');
+      parallax.style.setProperty('--float-y', '0px');
     };
     parallax.addEventListener('pointermove', onPointerMove);
-    parallax.addEventListener('pointerleave', () => {
-      parallax.style.transform = '';
-    });
+    parallax.addEventListener('pointerleave', resetPointer);
+    parallax.addEventListener('pointercancel', resetPointer);
   }
 
   const filterContainer = document.querySelector('[data-case-filters]');
@@ -112,6 +142,7 @@
         if (visible) visibleCount += 1;
       });
       if (emptyState) emptyState.hidden = visibleCount !== 0;
+      requestScrollUpdate();
     });
   }
 
@@ -122,13 +153,13 @@
       group?.querySelectorAll('details[open]').forEach((item) => {
         if (item !== details) item.open = false;
       });
+      requestScrollUpdate();
     });
   });
 
   const form = document.querySelector('[data-consult-form]');
   if (form) {
     const status = form.querySelector('[data-form-status]');
-    const copyButton = form.querySelector('[data-copy-summary]');
 
     const setStatus = (message, type = '') => {
       if (!status) return;
@@ -217,7 +248,15 @@
       }
     };
 
-    copyButton?.addEventListener('click', copySummary);
+    form.addEventListener('input', (event) => {
+      const field = event.target;
+      if (!(field instanceof HTMLElement)) return;
+      field.classList.remove('is-invalid');
+      const errorField = field.getAttribute('name')
+        ? form.querySelector(`[data-error-for="${field.getAttribute('name')}"]`)
+        : null;
+      if (errorField) errorField.textContent = '';
+    });
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
